@@ -1,0 +1,67 @@
+name: QA-Regression
+on:
+workflow_dispatch:
+pull_request:
+  branches: [development, main]
+
+jobs:
+  cypress-test:
+    name: Run Cypress
+    runs-on: ubuntu-latest
+    strategy:
+ 
+      fail-fast: false
+      matrix:
+        containers:
+          [
+          regression/solutions/see_all_solutions
+          ]
+          
+      - name: Use Node 16
+        uses: actions/setup-node@v2
+        with:
+          node-version: 16
+          cache: yarn  
+      
+      - name: Install git-secret
+        run: |
+          sudo apt-get update
+          sudo apt-get install git-secret=0.2.3-1
+          git secret --version
+      - name: Decode secret files
+        run: |
+          echo -n "$GPG_PRIVATE_KEY" | gpg --import
+          git secret reveal
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Install dependencies
+        run: yarn --immutable
+
+      - name: Build libraries
+        run: yarn build:libraries
+
+      # Running Cypress Test
+      - name: Cypress run
+        uses: cypress-io/github-action@v2
+        env:
+          PORT: 8080
+        with:
+          start: yarn workspace @hyperbase/web-app dev:cypress
+          wait-on: "https://www.hyperbasedev.com:8080"
+          command: yarn workspace @hyperbase/web-app cypress:single cypress/e2e/regression/${{ matrix.containers }}.spec.ts
+
+      - name: Save Cypress Screenshots
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: cypress-screenshots
+          path: packages/web-app/cypress/screenshots
+
+      # Test run video was always captured, so this action uses "always()" condition
+      - name: Save Cypress Videos
+        uses: actions/upload-artifact@v2
+        if: always()
+        with:
+          name: cypress-videos
+          path: packages/web-app/cypress/videos
